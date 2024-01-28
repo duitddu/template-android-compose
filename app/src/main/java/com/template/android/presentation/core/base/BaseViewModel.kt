@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
+
+typealias OnSuccess<T> = (T) -> Unit
 
 abstract class BaseViewModel<ViewState, ViewEvent>(initialState: ViewState) : ViewModel() {
     protected val _viewState: MutableStateFlow<ViewState> = MutableStateFlow(initialState)
@@ -26,11 +28,22 @@ abstract class BaseViewModel<ViewState, ViewEvent>(initialState: ViewState) : Vi
         onCoroutineException(coroutineContext, throwable)
     }
 
+    private val viewModelContext = Dispatchers.IO + coroutineExceptionHandler
+
     abstract fun onCoroutineException(context: CoroutineContext, throwable: Throwable)
 
-    protected fun launch(
-        context: CoroutineContext = EmptyCoroutineContext,
+    protected fun <T> launch(
         start: CoroutineStart = CoroutineStart.DEFAULT,
-        block: suspend CoroutineScope.() -> Unit
-    ): Job = viewModelScope.launch(context, start, block)
+        onSuccess: OnSuccess<T>? = null,
+        block: suspend CoroutineScope.() -> T
+    ): Job = viewModelScope.launch(
+        context = viewModelContext,
+        start = start
+    ) {
+        runCatching {
+            block.invoke(this)
+        }.onSuccess {
+            onSuccess?.invoke(it)
+        }
+    }
 }
